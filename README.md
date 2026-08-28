@@ -88,6 +88,9 @@ BASE64(
 
 `X-Timestamp` must be within five minutes of the current server time; requests outside that window are rejected to prevent replay attacks.
 
+Runnable Node.js and curl examples that implement this signing and call the API end-to-end
+are available in [`examples/`](examples/).
+
 ## Create a Payment Link
 
 ```http
