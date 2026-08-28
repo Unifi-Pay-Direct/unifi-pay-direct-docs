@@ -1,17 +1,17 @@
 # Unifi Pay Direct
 
-Accept **stablecoin payments** (USDT, JPYC) with **zero pre-screening**, using a single HMAC-signed REST API — no SDK required.
+Accept **stablecoin payments** (USDT, JPYC) with **zero pre-screening**, using a single HMAC-signed REST API - no SDK required.
 
-Unifi Pay Direct is a smart-contract-based payment product from Unifi Pay. Unlike traditional payment gateways, merchants can self-register through the Unifi Pay Console and start accepting payments immediately, without a manual business review process. Payments are never held by Unifi Pay — funds move directly from the buyer's wallet to the seller's registered settlement wallet through a smart contract.
+Unifi Pay Direct is a smart-contract-based payment product from Unifi Pay. Unlike traditional payment gateways, merchants can self-register through the Unifi Pay Console and start accepting payments immediately, without a manual business review process. Payments are never held by Unifi Pay - funds move directly from the buyer's wallet to the seller's registered settlement wallet through a smart contract.
 
 ## Why Unifi Pay Direct
 
-- **No pre-screening** — sign up and start integrating the same day; there is no manual merchant review process before you can create payment links.
-- **Smart-contract settlement** — payment funds are not custodied by Unifi Pay. They are distributed directly to the seller's registered wallet by the smart contract itself.
-- **Simple integration** — a REST API with HMAC request signing. No SDK installation, no client library dependency.
-- **Multi-asset, multi-currency** — buyers pay in USDT or JPYC; sellers can price orders in USD or JPY (support for IDRP is planned).
-- **Low, transparent fee** — a flat 1% Protocol Fee, deducted automatically at settlement.
-- **Safe to test** — a full Preview environment on Kaia's Kairos Testnet mirrors the Production API before you go live on Kaia Mainnet.
+- **No pre-screening** - sign up and start integrating the same day; there is no manual merchant review process before you can create payment links.
+- **Smart-contract settlement** - payment funds are not custodied by Unifi Pay. They are distributed directly to the seller's registered wallet by the smart contract itself.
+- **Simple integration** - a REST API with HMAC request signing. No SDK installation, no client library dependency.
+- **Multi-asset, multi-currency** - buyers pay in USDT or JPYC; sellers can price orders in USD or JPY (support for IDRP is planned).
+- **Low, transparent fee** - a flat 1% Protocol Fee, deducted automatically at settlement.
+- **Safe to test** - A Preview environment is available on Kaia's Kairos Testnet for integration testing, while Production runs on Kaia Mainnet.
 
 ## Unifi Pay Direct vs. Unifi Pay Classic
 
@@ -20,11 +20,11 @@ Unifi Pay also offers **Classic**, a separate product for merchants who want to 
 | | Direct | Classic |
 |---|---|---|
 | Integration style | New REST API, payment-link based | Existing PG-style integration |
-| Onboarding | Self-serve, no pre-screening | Existing PG review process |
+| Onboarding | Self-serve, no pre-screening | Separate onboarding required |
 | Settlement | Stablecoin, direct to seller wallet | Fiat, no crypto wallet required |
-| Typical fit | Merchants building a new integration from scratch | Merchants migrating an existing PG setup |
+| Typical fit | Merchants using self-serve payment-link or API integration | Merchants using an existing PG-style integration |
 
-This repository documents **Direct** only. See [Unifi Pay Direct vs. Classic guides](https://pay.unifi.me/guides/) for the full comparison.
+This repository documents **Direct** only. See [the Unifi Pay website](https://pay.unifi.me/) for more information about Unifi Pay Direct and Classic.
 
 ## Key Features
 
@@ -49,7 +49,7 @@ This repository documents **Direct** only. See [Unifi Pay Direct vs. Classic gui
 5. Create an HMAC signature for the API request.
 6. Request a payment link through the API.
 7. Redirect or share the returned payment URL with the customer.
-8. Receive the payment result through Webhook or check the payment status through the API.
+8. Receive payment results through Webhook when a `callbackUrl` is registered, and use the Payment Status API to retrieve detailed payment information when needed.
 9. The payment amount, excluding the Protocol Fee, is settled to the registered wallet.
 
 ## API Environments
@@ -119,7 +119,7 @@ The response includes:
 }
 ```
 
-Send the returned `linkUrl` to the customer to start the payment. `requestId` is an idempotency key — resubmitting the same value is rejected as a duplicate issuance.
+Send the returned `linkUrl` to the customer to start the payment. `requestId` is an idempotency key - resubmitting the same value is rejected as a duplicate issuance.
 
 ## Check Payment Status
 
@@ -129,11 +129,11 @@ GET /api/seller/v1/payment/{transactionId}
 
 Payment status can include:
 
-- `CREATED` — Payment created
-- `PENDING` — Payment in progress
-- `CONFIRMED` — Payment completed
-- `FAILED` — Payment failed
-- `CANCELED` — Payment canceled
+- `CREATED` - Payment created
+- `PENDING` - Payment in progress
+- `CONFIRMED` - Payment completed
+- `FAILED` - Payment failed
+- `CANCELED` - Payment canceled
 
 ## Webhook
 
@@ -166,7 +166,7 @@ If Webhook delivery fails because of a `5xx` response or no response, Unifi Pay 
 | 4th | 1 hour |
 | 5th | 3 hours |
 
-If a `callbackUrl` was not registered, the payment result must be retrieved by polling the Payment Status Check API instead.
+When a `callbackUrl` is registered, payment results are delivered via Webhook. For detailed payment information, use the Payment Status API after receiving the Webhook.
 
 ## Payment History
 
@@ -201,10 +201,10 @@ Refund transfers are handled through the Unifi Pay Console: the seller reviews t
 More detail is available on the [Unifi Pay Help Center](https://pay.unifi.me/help/); a few integration-relevant highlights:
 
 - **Is there a signup or setup fee?** No. The only cost is the 1% Protocol Fee, deducted automatically at the time of payment.
-- **Can a store's App ID be changed later?** No — once saved, the App ID is permanently locked and cannot be changed from the Console or by support.
+- **Can a store's App ID be changed later?** No - once saved, the App ID is permanently locked and cannot be changed from the Console or by support.
 - **How is the settlement wallet registered?** Either by entering an existing external/exchange wallet address on Kaia Mainnet, or by connecting a Unifi Wallet. Refund transfers always require a Unifi Wallet, regardless of which method was used to register the settlement wallet.
-- **Is there a payment amount limit?** Yes — per order, roughly 0.01–999,999 USD / 1–999,999,999 JPY (order currency), and 0.01–9,999,999 USDT / 1–999,999,999 JPYC (payment currency). Very low-priced items may not be payable in a currency whose minimum exceeds the item price.
-- **Is a test environment available?** Yes — the Preview environment (Kairos Testnet) mirrors Production for integration testing before going live.
+- **Is there a payment amount limit?** Yes. The supported amount ranges are 0.01-999,999 USD / 1-999,999,999 JPY for order currencies, and 0.01-9,999,999 USDT / 1-999,999,999 JPYC for payment currencies. Very low-priced items may not be payable in a currency whose minimum exceeds the item price.
+- **Is a test environment available?** Yes - the Preview environment is available on Kairos Testnet for integration testing before going live on Kaia Mainnet.
 - **What happens when an API key is reissued?** The previous key immediately loses access for new payment links and history queries, but payment links already created with it continue to work normally.
 
 ## Documentation
