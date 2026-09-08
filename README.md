@@ -88,10 +88,12 @@ BASE64(
 
 `X-Timestamp` must be within five minutes of the current server time; requests outside that window are rejected to prevent replay attacks.
 
+This document reflects API **v2** (the current default). A legacy v1 remains available for existing partners but is being phased out - use v2 for any new integration.
+
 ## Create a Payment Link
 
 ```http
-POST /api/seller/v1/payment/link
+POST /api/seller/v2/payment/link
 ```
 
 Example request body:
@@ -124,22 +126,34 @@ Send the returned `linkUrl` to the customer to start the payment. `requestId` is
 ## Check Payment Status
 
 ```http
-GET /api/seller/v1/payment/{transactionId}
+GET /api/seller/v2/payment/{transactionId}
 ```
 
 Payment status can include:
 
 - `CREATED` - Payment created
 - `PENDING` - Payment in progress
-- `CONFIRMED` - Payment completed
-- `FAILED` - Payment failed
-- `CANCELED` - Payment canceled
+- `PAID` - Payment successful
+- `CONFIRMED` - Settlement complete (final)
+- `FAILED` - Payment failed (final)
+- `CANCELED` - Payment canceled (final)
 
 ## Webhook
 
-If a `callbackUrl` is provided when creating a payment link, Unifi Pay sends the final payment result asynchronously.
+If a `callbackUrl` is provided when creating a payment link, Unifi Pay sends the payment result asynchronously, twice, for the same `transactionId`: the 1st Webhook when status becomes `PAID`, and the 2nd Webhook when status becomes `CONFIRMED`. Handle both idempotently, since delivery can also be retried. You can switch the UI to a payment-complete screen as soon as the 1st (`PAID`) Webhook arrives.
 
-Example:
+1st Webhook (`PAID`):
+
+```json
+{
+  "transactionId": "<transaction-id>",
+  "orderId": "<order-id>",
+  "status": "PAID",
+  "type": "PURCHASE"
+}
+```
+
+2nd Webhook (`CONFIRMED`):
 
 ```json
 {
@@ -149,6 +163,8 @@ Example:
   "type": "PURCHASE"
 }
 ```
+
+`blockchainTxId` and `blockchainNetworkFee` are not present yet at `PAID` - they're only returned once the payment reaches `CONFIRMED`, so read amount and blockchain details from the Payment Status API after the 2nd Webhook.
 
 The receiving server must return:
 
@@ -173,7 +189,7 @@ When a `callbackUrl` is registered, payment results are delivered via Webhook. F
 Payment and refund records can be retrieved using:
 
 ```http
-GET /api/seller/v1/payment/settlement/transaction
+GET /api/seller/v2/payment/settlement/transaction
 ```
 
 Results can be filtered by date, payment type, transaction ID, or settlement ID.
@@ -201,7 +217,7 @@ Refund transfers are handled through the Unifi Pay Console: the seller reviews t
 More detail is available on the [Unifi Pay Help Center](https://pay.unifi.me/help/); a few integration-relevant highlights:
 
 - **Is there a signup or setup fee?** No. The only cost is the 1% Protocol Fee, deducted automatically at the time of payment.
-- **Can a store's App ID be changed later?** No - once saved, the App ID is permanently locked and cannot be changed from the Console or by support.
+- **What is the App ID?** It's an internal identifier assigned automatically at signup - it isn't something you enter during seller registration, and it isn't shown in the Console. Already-issued App IDs stay unchanged, so there's nothing to reissue or migrate.
 - **How is the settlement wallet registered?** Either by entering an existing external/exchange wallet address on Kaia Mainnet, or by connecting a Unifi Wallet. Refund transfers always require a Unifi Wallet, regardless of which method was used to register the settlement wallet.
 - **Is there a payment amount limit?** Yes. The supported amount ranges are 0.01-999,999 USD / 1-999,999,999 JPY for order currencies, and 0.01-9,999,999 USDT / 1-999,999,999 JPYC for payment currencies. Very low-priced items may not be payable in a currency whose minimum exceeds the item price.
 - **Is a test environment available?** Yes - the Preview environment is available on Kairos Testnet for integration testing before going live on Kaia Mainnet.
