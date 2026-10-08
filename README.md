@@ -33,6 +33,7 @@ This repository documents **Direct** only. See [the Unifi Pay website](https://p
 - Payment link creation
 - Payment status API
 - Payment history API
+- Refund API (DIRECT)
 - Webhook support for payment results
 - USDT and JPYC payments
 - USD and JPY order currencies
@@ -208,9 +209,38 @@ IDRP is planned for future support.
 
 ## Refunds
 
-Refunds are **not provided through the API**.
+Refunds can be requested either through the Unifi Pay Console's Refund menu or through the Refund API. Either way, the seller must sign and send the refund on-chain using a Unifi Wallet - because it's a new on-chain transfer rather than a reversal of the original payment, the 1% Protocol Fee from the original payment is not returned.
 
-Refund transfers are handled through the Unifi Pay Console: the seller reviews the request, then signs and sends the refund on-chain using a Unifi Wallet from the Console's Refund menu. Because refunds are a new on-chain transfer rather than a reversal of the original payment, the 1% Protocol Fee from the original payment is not returned. Refund history can be retrieved from the Payment History API by filtering on `paymentType=REFUND`.
+A refund can only be requested while the original payment is `CONFIRMED` and was a DIRECT payout. Only one refund can be in progress per original payment at a time, and an unsigned draft is automatically canceled. Refunds must be requested within 365 days of the original payment's completion.
+
+```http
+POST /api/seller/v2/payment/refund/direct
+```
+
+Example request body:
+
+```json
+{
+  "requestId": "RFD-20260907-0001",
+  "orderId": "LINK-3kQ9xR2mN7pLw8vBc1dEfH-a1B2c3D4e5F6",
+  "orderCurrencyCode": "USD",
+  "orderAmount": 30.0,
+  "isPartial": true
+}
+```
+
+The response includes:
+
+```json
+{
+  "transactionId": "<refund-transaction-id>",
+  "startPageUrl": "<refund-signing-page-url>"
+}
+```
+
+The seller must sign at `startPageUrl` with their Unifi Wallet before the refund is executed; track its status with `transactionId`.
+
+Refund status is `PAID` (signed, not yet settled), `CONFIRMED` (final), or `FAILED` (final) - there is no `PENDING` state. Refund results are delivered through the same Webhook as payments, with `type: "REFUND"`. Refund history can be retrieved from the Payment History API by filtering on `paymentType=REFUND`.
 
 ## FAQ
 

@@ -13,7 +13,7 @@ Unifi Pay also offers **Classic**, a separate product for merchants who want to 
 - Webhook payloads carry only minimal fields (`transactionId`, `orderId`, `status`, `type`). For full payment detail, call the Payment Status API (`GET /api/seller/v2/payment/{transactionId}`) after receiving the webhook - do not present the Payment Status API as a webhook replacement or as a way to skip registering `callbackUrl`.
 - The Preview environment (Kairos Testnet) is for integration testing only. Do not describe it as "mirroring" or functionally identical to Production (Kaia Mainnet) - official docs make no such claim.
 - Amount limits are exact, not approximate: order currency 0.01-999,999 USD / 1-999,999,999 JPY; payment currency 0.01-9,999,999 USDT / 1-999,999,999 JPYC.
-- Refunds are **not** available via API. Refunds are initiated and signed on-chain by the seller from the Unifi Pay Console's Refund menu, using a Unifi Wallet. The original 1% Protocol Fee is not refunded.
+- Refunds can be requested via the Console's Refund menu **or** the Refund API (`POST /api/seller/v2/payment/refund/direct`). Either path still requires the seller to sign and send the refund on-chain using a Unifi Wallet - it's a new transfer, not a reversal of the original payment. A refund is only allowed while the original payment is `CONFIRMED` and was a DIRECT payout, only one refund can be in progress per original payment at a time, and refunds must be requested within 365 days of the original payment's completion. The original 1% Protocol Fee is not refunded.
 - Currently supported assets: USDT, JPYC (payment currency), USD, JPY (order currency). IDRP is planned but not yet supported - do not state it is available today.
 
 ## Docs
