@@ -9,7 +9,7 @@ Unifi Pay Direct is a smart-contract-based payment product from Unifi Pay. Unlik
 - **No pre-screening** - sign up and start integrating the same day; there is no manual merchant review process before you can create payment links.
 - **Smart-contract settlement** - payment funds are not custodied by Unifi Pay. They are distributed directly to the seller's registered wallet by the smart contract itself.
 - **Simple integration** - a REST API with HMAC request signing. No SDK installation, no client library dependency.
-- **Multi-asset, multi-currency** - buyers pay in USDT or JPYC; sellers can price orders in USD or JPY (support for IDRP is planned).
+- **Multi-asset, multi-currency** - buyers pay in USDT or JPYC; sellers can price orders in USD, JPY, or KRW (support for IDRP is planned).
 - **Low, transparent fee** - a flat 1% Protocol Fee, deducted automatically at settlement.
 - **Safe to test** - A Preview environment is available on Kaia's Kairos Testnet for integration testing, while Production runs on Kaia Mainnet.
 
@@ -30,13 +30,14 @@ This repository documents **Direct** only. See [the Unifi Pay website](https://p
 
 - API integration without an SDK
 - HMAC authentication for server-to-server requests
-- Payment link creation
+- Payment link creation, listing, and forced expiry
 - Payment status API
-- Payment history API
-- Refund API (DIRECT)
+- Payment history API (full-status and settlement-only, with cursor export)
+- Refund API (DIRECT), with eligibility check and dedicated status lookup
+- Store lookup API
 - Webhook support for payment results
 - USDT and JPYC payments
-- USD and JPY order currencies
+- USD, JPY, and KRW order currencies
 - Immediate settlement to a registered Kaia Mainnet wallet
 - Preview environment on Kairos Testnet
 - 1% Protocol Fee
@@ -124,6 +125,22 @@ The response includes:
 
 Send the returned `linkUrl` to the customer to start the payment. `requestId` is an idempotency key - resubmitting the same value is rejected as a duplicate issuance.
 
+## List Payment Links
+
+```http
+GET /api/seller/v2/payment/link?status={ACTIVE|EXPIRED}&page={page}&size={size}
+```
+
+Defaults to `status=ACTIVE`. `size` defaults to 20 (other list endpoints below default to 50).
+
+## Disable a Payment Link
+
+```http
+POST /api/seller/v2/payment/link/{linkId}/disable
+```
+
+Force-expires the link immediately, making it unusable for new payments. This cannot be undone.
+
 ## Check Payment Status
 
 ```http
@@ -140,6 +157,8 @@ Payment status can include:
 - `CANCELED` - Payment canceled (final)
 
 ## Webhook
+
+Up to 5 callback domains can be registered in advance; registration is optional, but any registered domain must use `https://`. Domain matching is allowlist-based - only the domain is checked, not the path or query string.
 
 If a `callbackUrl` is provided when creating a payment link, Unifi Pay sends the payment result asynchronously, twice, for the same `transactionId`: the 1st Webhook when status becomes `PAID`, and the 2nd Webhook when status becomes `CONFIRMED`. Handle both idempotently, since delivery can also be retried. You can switch the UI to a payment-complete screen as soon as the 1st (`PAID`) Webhook arrives.
 
@@ -187,31 +206,61 @@ When a `callbackUrl` is registered, payment results are delivered via Webhook. F
 
 ## Payment History
 
-Payment and refund records can be retrieved using:
+Two endpoints cover payment and refund records, scoped differently:
+
+```http
+GET /api/seller/v2/payment/transaction
+```
+
+Returns records in any status (`CREATED`, `PENDING`, `PAID`, `CONFIRMED`, `FAILED`, `CANCELED`), filterable by date (max 90-day range per request), payment type, or transaction ID.
 
 ```http
 GET /api/seller/v2/payment/settlement/transaction
 ```
 
-Results can be filtered by date, payment type, transaction ID, or settlement ID.
+Returns `CONFIRMED`-only (settled) records, filterable by date, payment type, transaction ID, or settlement ID.
+
+For walking the full history (e.g. bulk export), use the cursor-paginated variant instead of `page`/`size`:
+
+```http
+GET /api/seller/v2/payment/settlement/transaction/cursor
+```
+
+Also limited to a 90-day date range per request; does not support filtering by a single transaction ID or settlement ID.
+
+## Look Up a Store
+
+```http
+GET /api/seller/v2/store
+```
+
+Lists the partner's registered stores, including each store's `partnerStoreId`, `name`, `status`, `orderCurrencyCodes`, and `paymentCurrencyCodes`. Use the returned `partnerStoreId` as the `storeId` when creating a payment link.
 
 ## Supported Payment Options
 
 | Item | Supported |
 |---|---|
 | Payment assets | USDT, JPYC |
-| Order currencies | USD, JPY |
+| Order currencies | USD, JPY, KRW |
 | Production network | Kaia Mainnet |
 | Preview network | Kairos Testnet |
 | Protocol Fee | 1% |
 
-IDRP is planned for future support.
+IDRP is planned for future support. KRW orders are always settled in USDT or JPYC - the order amount is converted to the payment currency at checkout. KRW amounts must be whole numbers (no decimals).
 
 ## Refunds
 
 Refunds can be requested either through the Unifi Pay Console's Refund menu or through the Refund API. Either way, the seller must sign and send the refund on-chain using a Unifi Wallet - because it's a new on-chain transfer rather than a reversal of the original payment, the 1% Protocol Fee from the original payment is not returned.
 
 A refund can only be requested while the original payment is `CONFIRMED` and was a DIRECT payout. Only one refund can be in progress per original payment at a time, and an unsigned draft is automatically canceled. Refunds must be requested within 365 days of the original payment's completion.
+
+Before submitting a refund, you can check whether it's allowed:
+
+```http
+GET /api/seller/v2/payment/refund/lookup?transactionId={transactionId}
+```
+
+Returns `refundable` (boolean) and `refundableAmount`; when not refundable, a `reason` code explains why: `ORIGINAL_NOT_CONFIRMED`, `ORIGINAL_NOT_REFUNDABLE`, `FULLY_REFUNDED`, or `NOT_DIRECT_PAYOUT`.
 
 ```http
 POST /api/seller/v2/payment/refund/direct
@@ -240,7 +289,15 @@ The response includes:
 
 The seller must sign at `startPageUrl` with their Unifi Wallet before the refund is executed; track its status with `transactionId`.
 
-Refund status is `PAID` (signed, not yet settled), `CONFIRMED` (final), or `FAILED` (final) - there is no `PENDING` state. Refund results are delivered through the same Webhook as payments, with `type: "REFUND"`. Refund history can be retrieved from the Payment History API by filtering on `paymentType=REFUND`.
+As seen through the Payment Status/History API, a refund's status can be `CREATED`, `PENDING`, `PAID` (signed, not yet settled), `CONFIRMED` (final), `FAILED` (final), or `CANCELED` (final, e.g. when an unsigned draft auto-cancels). Refund results are delivered through the same Webhook as payments, with `type: "REFUND"`. Refund history can be retrieved from the Payment History API by filtering on `paymentType=REFUND`.
+
+For a refund-specific view (including its on-chain settlement detail), use the dedicated status endpoint:
+
+```http
+GET /api/seller/v2/payment/refund/{transactionId}
+```
+
+This returns a more granular lifecycle (`CREATED`, `REQUESTED`, `SUBMITTED`, `PAID`, `CONFIRMED`, `FAILED`, `CANCELED`) plus `failType`, `blockchainTxId`, and `blockchainNetworkFee` once settled. `REQUESTED` and `SUBMITTED` are both reported as `PENDING` in the Payment Status/History API.
 
 ## FAQ
 
@@ -249,7 +306,7 @@ More detail is available on the [Unifi Pay Help Center](https://pay.unifi.me/hel
 - **Is there a signup or setup fee?** No. The only cost is the 1% Protocol Fee, deducted automatically at the time of payment.
 - **What is the App ID?** It's an internal identifier assigned automatically at signup - it isn't something you enter during seller registration, and it isn't shown in the Console. Already-issued App IDs stay unchanged, so there's nothing to reissue or migrate.
 - **How is the settlement wallet registered?** Either by entering an existing external/exchange wallet address on Kaia Mainnet, or by connecting a Unifi Wallet. Refund transfers always require a Unifi Wallet, regardless of which method was used to register the settlement wallet.
-- **Is there a payment amount limit?** Yes. The supported amount ranges are 0.01-999,999 USD / 1-999,999,999 JPY for order currencies, and 0.01-9,999,999 USDT / 1-999,999,999 JPYC for payment currencies. Very low-priced items may not be payable in a currency whose minimum exceeds the item price.
+- **Is there a payment amount limit?** Yes. The supported amount ranges are 0.01-999,999 USD / 1-999,999,999 JPY / 1-999,999,999 KRW (whole numbers only) for order currencies, and 0.01-9,999,999 USDT / 1-999,999,999 JPYC for payment currencies. Very low-priced items may not be payable in a currency whose minimum exceeds the item price.
 - **Is a test environment available?** Yes - the Preview environment is available on Kairos Testnet for integration testing before going live on Kaia Mainnet.
 - **What happens when an API key is reissued?** The previous key immediately loses access for new payment links and history queries, but payment links already created with it continue to work normally.
 
